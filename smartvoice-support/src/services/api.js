@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://tesseract26-vit-backend.onrender.com'
 const ENABLE_BACKEND = import.meta.env.VITE_ENABLE_BACKEND !== 'false'
 const BACKEND_RETRY_MS = Number(import.meta.env.VITE_BACKEND_RETRY_MS || 8000)
 let backendDownUntil = 0
