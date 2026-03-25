@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from 'react'
-import { CheckCircle, Clock, User } from 'lucide-react'
 import { formatDateTime, getEmotionMeta } from '../utils/helpers'
 
 const statusMeta = {
-  pending: { label: 'Pending', className: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
-  assigned: { label: 'Assigned', className: 'bg-sky-100 text-sky-700 border-sky-200', icon: User },
-  resolved: { label: 'Resolved', className: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle }
+  pending: { label: 'Pending', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  assigned: { label: 'Assigned', className: 'bg-sky-100 text-sky-700 border-sky-200' },
+  resolved: { label: 'Resolved', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
 }
 
 const demoAgents = ['Ava Brown', 'Noah Hall', 'Mia Lewis', 'Liam Carter']
@@ -14,7 +13,6 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
   const [selectedAgent, setSelectedAgent] = useState('')
   const [resolution, setResolution] = useState('')
   const status = statusMeta[escalation.status] || statusMeta.pending
-  const StatusIcon = status.icon
   const emotionMeta = getEmotionMeta(escalation.emotion)
 
   const stepsSummary = useMemo(() => {
@@ -27,14 +25,13 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
   }, [escalation.messages])
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="card-lift panel-surface vivid-surface tone-sky snap-start flex max-h-[78vh] flex-col overflow-hidden rounded-2xl p-4 soft-appear">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-bold text-slate-900">{escalation.userName}</h3>
+          <h3 className="font-display text-base font-bold text-slate-900">{escalation.userName}</h3>
           <p className="text-xs text-slate-500">User ID: {escalation.userId}</p>
         </div>
         <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${status.className}`}>
-          <StatusIcon size={13} />
           {status.label}
         </span>
       </div>
@@ -60,12 +57,14 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Issue Summary</p>
-        <p className="mt-2 text-sm leading-6 text-slate-700">{escalation.summary}</p>
+        <div className="mt-2 max-h-24 overflow-y-auto pr-1">
+          <p className="text-sm leading-6 text-slate-700">{escalation.summary}</p>
+        </div>
       </div>
 
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-4 flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Conversation History</p>
-        <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+        <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
           {(escalation.messages || []).map((message, idx) => (
             <div
               key={message.id || `${message.sender}-${message.timestamp || idx}`}
@@ -131,7 +130,9 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
       {escalation.status === 'resolved' && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Resolution</p>
-          <p className="mt-2 text-sm text-emerald-800">{escalation.resolution || 'Resolved by agent.'}</p>
+          <div className="mt-2 max-h-20 overflow-y-auto pr-1">
+            <p className="text-sm text-emerald-800">{escalation.resolution || 'Resolved by agent.'}</p>
+          </div>
         </div>
       )}
     </article>

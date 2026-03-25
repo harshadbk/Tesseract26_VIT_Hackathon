@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useState } from 'react'
-import { Mic, MicOff, Send } from 'lucide-react'
 import { createSpeechRecognition, getEmotionMeta, supportsSpeechRecognition } from '../utils/helpers'
 
 const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
@@ -77,31 +76,31 @@ const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
           type="button"
           onClick={handleVoiceToggle}
           disabled={!speechEnabled || isLoading}
-          className={`relative rounded-xl border p-3 transition ${
+          className={`relative rounded-xl border px-3 py-2 text-xs font-semibold transition ${
             isListening
-              ? 'border-rose-300 bg-rose-100 text-rose-700 voice-pulse'
-              : 'border-slate-200 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200'
+              ? 'border-rose-300 bg-gradient-to-r from-rose-100 to-orange-100 text-rose-700 voice-pulse'
+              : 'border-slate-200 bg-gradient-to-r from-sky-50 to-indigo-50 text-slate-700 hover:border-slate-300 hover:from-sky-100 hover:to-indigo-100'
           } disabled:cursor-not-allowed disabled:opacity-60`}
           title={speechEnabled ? 'Start/stop voice input' : 'Speech recognition is not supported in this browser'}
         >
-          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+          {isListening ? 'Stop Voice' : 'Start Voice'}
         </button>
 
         <input
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           placeholder="Describe your issue (order delay, refund, wrong product)..."
-          className="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:bg-white"
+          className="h-12 flex-1 rounded-xl border border-slate-200 bg-white/85 px-4 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:bg-white"
           disabled={isLoading}
         />
 
         <button
           type="submit"
           disabled={!message.trim() || isLoading}
-          className="h-12 rounded-xl bg-slate-900 px-4 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-12 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-900 px-4 text-sm font-semibold text-white transition hover:from-slate-800 hover:to-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
           title="Send message"
         >
-          <Send size={18} />
+          Send
         </button>
       </form>
 

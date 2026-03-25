@@ -25,8 +25,8 @@ const EMPTY_INSIGHTS = {
 
 const detectEmotion = (text = '') => {
   const lowerText = text.toLowerCase()
-  if (/angry|furious|hate|ridiculous|worst/.test(lowerText)) return 'angry'
-  if (/frustrated|upset|annoyed|disappointed|again/.test(lowerText)) return 'frustrated'
+  if (/angry|anry|furious|hate|ridiculous|worst/.test(lowerText)) return 'angry'
+  if (/frustrated|frustated|frastated|upset|annoyed|disappointed|again|asap|urgent|right now|immediately|hurry|do\s+(it|this)\s+fast|fast please|quickly|faster|\bquick\b/.test(lowerText)) return 'frustrated'
   if (/confused|unclear|not sure|dont understand|don't understand/.test(lowerText)) return 'confused'
   if (/thanks|thank you|great|awesome|perfect/.test(lowerText)) return 'happy'
   return 'calm'
@@ -39,12 +39,33 @@ const buildRiskLevel = (emotion, messageCount) => {
   return 'low'
 }
 
+const smoothEmotion = (llmEmotion = 'calm', localEmotion = 'calm') => {
+  const normalizedLlm = String(llmEmotion || 'calm').toLowerCase()
+  const normalizedLocal = String(localEmotion || 'calm').toLowerCase()
+  const rank = { calm: 0, confused: 0, happy: 0, neutral: 0, frustrated: 1, angry: 2 }
+  const llmRank = rank[normalizedLlm] ?? 0
+  const localRank = rank[normalizedLocal] ?? 0
+  return localRank >= llmRank ? normalizedLocal : normalizedLlm
+}
+
 const makeMessage = (text, sender, emotion = 'calm') => ({
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   text,
   sender,
   emotion,
   timestamp: new Date().toISOString()
+})
+
+const createConversationRecord = (userId, userName) => ({
+  id: `conv-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  userId,
+  userName,
+  messages: [],
+  emotion: 'calm',
+  isEscalated: false,
+  summary: '',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
 })
 
 export const useConversation = () => {
@@ -84,17 +105,7 @@ export default function ConversationContext({ children }) {
         return prev
       }
 
-      const createdConversation = {
-        id: `conv-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        userId,
-        userName,
-        messages: [],
-        emotion: 'calm',
-        isEscalated: false,
-        summary: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+      const createdConversation = createConversationRecord(userId, userName)
 
       setCurrentConversationId(createdConversation.id)
       return [createdConversation, ...prev]
@@ -178,11 +189,11 @@ export default function ConversationContext({ children }) {
 
     try {
       const responseData = await chatWithAgent(message, currentConversation.userId)
-      const resolvedEmotion = responseData.emotion || userEmotion
+      const resolvedEmotion = smoothEmotion(responseData.emotion, userEmotion)
       const shouldEscalate = Boolean(responseData.escalate)
 
       const botReply = responseData.response || 'I want to help, but I need a little more detail to proceed.'
-      const botMessage = makeMessage(botReply, 'bot', resolvedEmotion)
+      const botMessage = makeMessage(botReply, 'bot', 'neutral')
       const completeHistory = [...historyWithUser, botMessage]
 
       const refreshedConversation = {
@@ -249,6 +260,10 @@ export default function ConversationContext({ children }) {
   }, [])
 
   const resolveEscalation = useCallback(async (escalationId, resolution) => {
+    const escalation = escalations.find((item) => item.id === escalationId)
+    const resolvedAt = new Date().toISOString()
+    const userFacingReply = `Human agent update: ${resolution}`
+
     await updateEscalation(escalationId, {
       status: 'resolved',
       resolution
@@ -257,11 +272,45 @@ export default function ConversationContext({ children }) {
     setEscalations((prev) =>
       prev.map((item) =>
         item.id === escalationId
-          ? { ...item, status: 'resolved', resolution, updatedAt: new Date().toISOString() }
+          ? { ...item, status: 'resolved', resolution, updatedAt: resolvedAt }
           : item
       )
     )
-  }, [])
+
+    if (!escalation) return
+
+    setConversations((prev) => {
+      const targetConversation = prev.find(
+        (item) => item.id === escalation.conversationId || item.userId === escalation.userId
+      )
+      if (!targetConversation) return prev
+
+      const botUpdateMessage = makeMessage(userFacingReply, 'bot', 'calm')
+      const updatedConversation = {
+        ...targetConversation,
+        messages: [...targetConversation.messages, botUpdateMessage],
+        emotion: 'calm',
+        isEscalated: false,
+        summary: resolution,
+        updatedAt: resolvedAt
+      }
+
+      return withConversationUpdates(prev, updatedConversation)
+    })
+
+    if (
+      currentConversation &&
+      (currentConversation.id === escalation.conversationId || currentConversation.userId === escalation.userId)
+    ) {
+      setAiInsights((prev) => ({
+        ...prev,
+        emotion: 'calm',
+        actionsTaken: ['Human agent resolved case', 'Resolution shared with user'],
+        shouldEscalate: false
+      }))
+      speakText(userFacingReply, 'calm')
+    }
+  }, [currentConversation, escalations])
 
   const setEmotion = useCallback((emotion) => {
     if (!currentConversation) return
