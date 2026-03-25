@@ -25,8 +25,8 @@ const handleBackendFailure = (error) => {
 
 const detectEmotionFallback = (message = '') => {
   const lowerText = message.toLowerCase()
-  if (/angry|furious|ridiculous|worst|hate/.test(lowerText)) return 'angry'
-  if (/frustrated|upset|annoyed|disappointed|again/.test(lowerText)) return 'frustrated'
+  if (/angry|anry|furious|ridiculous|worst|hate/.test(lowerText)) return 'angry'
+  if (/frustrated|frustated|frastated|upset|annoyed|disappointed|again|asap|urgent|right now|immediately|hurry|do\s+(it|this)\s+fast|fast please|quickly|faster|\bquick\b/.test(lowerText)) return 'frustrated'
   if (/confused|not sure|unclear|dont understand|don't understand/.test(lowerText)) return 'confused'
   if (/thanks|thank you|great|awesome|perfect/.test(lowerText)) return 'happy'
   return 'calm'
@@ -41,10 +41,12 @@ const detectIntentFallback = (message = '') => {
 }
 
 export const chatWithAgent = async (message, userId) => {
+  const normalizedMessage = String(message || '').toLowerCase()
+  const userAskedHandoff = /human|agent|escalat|manager|supervisor/.test(normalizedMessage)
   if (!shouldUseBackend()) {
     const emotion = detectEmotionFallback(message)
     const intent = detectIntentFallback(message)
-    const escalate = emotion === 'angry' || emotion === 'frustrated'
+    const escalate = emotion === 'angry' || (emotion === 'frustrated' && userAskedHandoff)
     return {
       intent,
       emotion,
@@ -73,7 +75,7 @@ export const chatWithAgent = async (message, userId) => {
     handleBackendFailure(error)
     const emotion = detectEmotionFallback(message)
     const intent = detectIntentFallback(message)
-    const escalate = emotion === 'angry' || emotion === 'frustrated'
+    const escalate = emotion === 'angry' || (emotion === 'frustrated' && userAskedHandoff)
     return {
       intent,
       emotion,

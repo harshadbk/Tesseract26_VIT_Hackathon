@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -17,6 +17,7 @@
 html,
 body,
 #root {
+  height: 100%;
   min-height: 100%;
   width: 100%;
 }
@@ -28,6 +29,78 @@ body {
     radial-gradient(1200px 600px at 8% -20%, rgba(56, 189, 248, 0.22), transparent),
     radial-gradient(1000px 500px at 90% 0%, rgba(16, 185, 129, 0.15), transparent),
     #f8fafc;
+  overflow: hidden;
+}
+
+.font-display {
+  font-family: 'Sora', 'Manrope', 'Segoe UI', sans-serif;
+  letter-spacing: -0.015em;
+}
+
+.title-gradient {
+  background: linear-gradient(110deg, #0f172a 0%, #1e3a8a 42%, #0369a1 74%, #0f172a 100%);
+  background-size: 220% 220%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleFlow 8s ease-in-out infinite;
+}
+
+.panel-surface {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.panel-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.45) 40%, transparent 75%);
+  transform: translateX(-100%);
+  animation: panelSweep 12s ease-in-out infinite;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.panel-surface > * {
+  position: relative;
+  z-index: 1;
+}
+
+.vivid-surface {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.88));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.vivid-surface::after {
+  content: '';
+  position: absolute;
+  inset: auto -20% -58% -20%;
+  height: 72%;
+  border-radius: 100%;
+  pointer-events: none;
+  opacity: 0.65;
+  z-index: 0;
+}
+
+.tone-sky::after {
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.14) 0%, rgba(14, 165, 233, 0) 72%);
+}
+
+.tone-indigo::after {
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.14) 0%, rgba(99, 102, 241, 0) 72%);
+}
+
+.tone-emerald::after {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.14) 0%, rgba(16, 185, 129, 0) 72%);
+}
+
+.gradient-animated {
+  background: linear-gradient(120deg, #f8fafc 0%, #ecfeff 35%, #eef2ff 66%, #f8fafc 100%);
+  background-size: 220% 220%;
+  animation: gradientFloat 16s ease infinite;
 }
 
 .bg-app {
@@ -100,6 +173,19 @@ body {
   animation: fadeInUp 0.22s ease-out;
 }
 
+.soft-appear {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.11);
+}
+
 @keyframes typing {
   0%,
   80%,
@@ -123,4 +209,45 @@ body {
 
 .typing-dot:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+@keyframes panelSweep {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.35;
+  }
+  60% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes gradientFloat {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes titleFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }

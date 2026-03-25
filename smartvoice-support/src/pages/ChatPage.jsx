@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Brain, LayoutDashboard, ShieldAlert, Sparkles } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import ChatMessage from '../components/ChatMessage'
 import ConversationPreview from '../components/ConversationPreview'
@@ -11,6 +10,7 @@ import { getEmotionMeta, getRiskMeta } from '../utils/helpers'
 const ChatPage = () => {
   const navigate = useNavigate()
   const messageEndRef = useRef(null)
+  const messageContainerRef = useRef(null)
   const {
     users,
     conversations,
@@ -28,14 +28,22 @@ const ChatPage = () => {
   }, [currentConversation, startConversation, users])
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!messageContainerRef.current) return
+    messageContainerRef.current.scrollTo({
+      top: messageContainerRef.current.scrollHeight,
+      behavior: 'smooth'
+    })
   }, [currentConversation?.messages?.length, isLoading])
 
   const currentEmotion = useMemo(
-    () => getEmotionMeta(currentConversation?.emotion || aiInsights.emotion || 'calm'),
-    [aiInsights.emotion, currentConversation?.emotion]
+    () => getEmotionMeta(currentConversation?.emotion || aiInsights?.emotion || 'calm'),
+    [aiInsights?.emotion, currentConversation?.emotion]
   )
-  const risk = useMemo(() => getRiskMeta(aiInsights.riskLevel), [aiInsights.riskLevel])
+  const risk = useMemo(() => getRiskMeta(aiInsights?.riskLevel || 'low'), [aiInsights?.riskLevel])
+  const actions = useMemo(
+    () => (Array.isArray(aiInsights?.actionsTaken) ? aiInsights.actionsTaken : []),
+    [aiInsights?.actionsTaken]
+  )
 
   if (!currentConversation) {
     return (
@@ -46,15 +54,15 @@ const ChatPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-app px-3 py-4 md:px-5 md:py-6">
-      <div className="mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[280px,1fr,300px]">
-        <aside className="hidden rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur lg:flex lg:flex-col">
+    <div className="h-full min-h-0 overflow-hidden bg-app px-3 py-4 md:px-5 md:py-6">
+      <div className="mx-auto grid h-full min-h-0 w-full max-w-7xl gap-4 lg:grid-cols-[280px,1fr,300px]">
+        <aside className="panel-surface vivid-surface tone-sky hidden min-h-0 rounded-3xl p-4 soft-appear lg:flex lg:flex-col">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">SmartVoice</h2>
+              <h2 className="font-display title-gradient text-lg font-bold">SmartVoice</h2>
               <p className="text-xs text-slate-500">Customer sessions</p>
             </div>
-            <Sparkles size={16} className="text-sky-500" />
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Live</span>
           </div>
 
           <div className="mb-4 space-y-2">
@@ -78,7 +86,7 @@ const ChatPage = () => {
             <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recent conversations</h3>
           </div>
 
-          <div className="space-y-2 overflow-y-auto">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {conversations.map((conversation) => (
               <ConversationPreview
                 key={conversation.id}
@@ -90,11 +98,11 @@ const ChatPage = () => {
           </div>
         </aside>
 
-        <section className="flex min-h-[82vh] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <section className="panel-surface vivid-surface tone-emerald flex h-full min-h-0 flex-col overflow-hidden rounded-3xl soft-appear">
           <header className="border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h1 className="text-xl font-bold text-slate-900">Voice Support Assistant</h1>
+                <h1 className="font-display title-gradient text-xl font-bold">Voice Support Assistant</h1>
                 <p className="text-sm text-slate-500">
                   Active user: <span className="font-semibold text-slate-700">{currentConversation.userName}</span>
                 </p>
@@ -104,15 +112,14 @@ const ChatPage = () => {
                 onClick={() => navigate('/dashboard')}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
               >
-                <LayoutDashboard size={16} />
                 Agent Dashboard
-                <ArrowRight size={14} />
+                &gt;
               </button>
             </div>
           </header>
 
           {currentConversation.isEscalated && (
-            <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 md:px-6">
+            <div className="border-b border-rose-200 bg-rose-50/90 px-4 py-3 md:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-rose-700">This case is escalated to a human agent.</p>
                 <button
@@ -126,7 +133,10 @@ const ChatPage = () => {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto bg-chat px-4 py-5 md:px-6">
+          <div
+            ref={messageContainerRef}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-chat px-4 py-5 md:px-6"
+          >
             {currentConversation.messages.length === 0 ? (
               <div className="flex h-full items-center justify-center">
                 <div className="max-w-md rounded-2xl border border-dashed border-slate-300 bg-white/80 p-6 text-center">
@@ -154,16 +164,16 @@ const ChatPage = () => {
           />
         </section>
 
-        <aside className="hidden rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur lg:flex lg:flex-col">
+        <aside className="panel-surface vivid-surface tone-indigo hidden min-h-0 rounded-3xl p-4 soft-appear lg:flex lg:flex-col">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">AI Insights</h2>
+              <h2 className="font-display title-gradient text-lg font-bold">Support Insights</h2>
               <p className="text-xs text-slate-500">Live support intelligence</p>
             </div>
-            <Brain size={18} className="text-sky-500" />
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Realtime</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Detected Emotion</p>
               <p className={`mt-1 text-sm font-semibold ${currentEmotion.toneClass}`}>{currentEmotion.label}</p>
@@ -172,9 +182,9 @@ const ChatPage = () => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Intent</p>
               <p className="mt-1 text-sm font-semibold text-slate-800">
-                {String(aiInsights.intent || 'general inquiry').replaceAll('_', ' ')}
+                {String(aiInsights?.intent || 'general inquiry').replaceAll('_', ' ')}
               </p>
-              <p className="mt-1 text-xs text-slate-500">Confidence: {(aiInsights.confidence * 100 || 0).toFixed(0)}%</p>
+              <p className="mt-1 text-xs text-slate-500">Confidence: {(Number(aiInsights?.confidence || 0) * 100).toFixed(0)}%</p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -187,7 +197,7 @@ const ChatPage = () => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Processing Steps</p>
               <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                {aiInsights.actionsTaken.map((item) => (
+                {actions.map((item) => (
                   <li key={item}>- {item}</li>
                 ))}
               </ul>
@@ -195,10 +205,7 @@ const ChatPage = () => {
 
             {currentConversation.isEscalated && (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert size={16} className="text-rose-600" />
-                  <p className="text-sm font-semibold text-rose-700">Escalated to human agent</p>
-                </div>
+                <p className="text-sm font-semibold text-rose-700">Escalated to human agent</p>
                 <p className="mt-2 text-xs text-rose-700">{currentConversation.summary || 'Summary prepared for dashboard.'}</p>
               </div>
             )}
