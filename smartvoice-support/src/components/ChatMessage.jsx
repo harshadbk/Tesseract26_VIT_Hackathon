@@ -1,28 +1,37 @@
 import React from 'react'
-import { formatTime, getEmotionColor } from '../utils/helpers'
+import { Volume2 } from 'lucide-react'
+import { formatTime, getEmotionMeta, speakText } from '../utils/helpers'
 
 const ChatMessage = ({ message }) => {
   const isUser = message.sender === 'user'
+  const emotion = getEmotionMeta(message.emotion)
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} message-fade-in`}>
+    <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} message-fade-in`}>
       <div
-        className={`max-w-[70%] rounded-lg px-4 py-3 ${
-          isUser
-            ? 'bg-primary text-white'
-            : 'bg-gray-100 text-gray-900'
+        className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm md:max-w-[72%] ${
+          isUser ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-900'
         }`}
       >
-        <p className="text-sm break-words">{message.text}</p>
-        <div className={`mt-1 flex items-center justify-between gap-2 text-xs ${
-          isUser ? 'text-white/70' : 'text-gray-500'
-        }`}>
-          <span>{formatTime(message.timestamp)}</span>
-          {!isUser && message.emotion && (
-            <span className={`capitalize ${getEmotionColor(message.emotion)}`}>
-              {message.emotion}
-            </span>
+        <div className="flex items-start justify-between gap-3">
+          <p className="whitespace-pre-wrap text-sm leading-6">{message.text}</p>
+          {!isUser && (
+            <button
+              type="button"
+              onClick={() => speakText(message.text, message.emotion)}
+              className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              title="Read response aloud"
+            >
+              <Volume2 size={15} />
+            </button>
           )}
+        </div>
+
+        <div className={`mt-2 flex items-center justify-between gap-2 text-xs ${isUser ? 'text-slate-200' : 'text-slate-500'}`}>
+          <span>{formatTime(message.timestamp)}</span>
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${emotion.chipClass}`}>
+            {emotion.label}
+          </span>
         </div>
       </div>
     </div>
