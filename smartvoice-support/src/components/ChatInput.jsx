@@ -1,97 +1,115 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Mic, Send, Copy, Phone } from 'lucide-react'
-import { startRecording, stopRecording, speakText, getEmotionEmoji } from '../utils/helpers'
-import { transcribeAudio, getBotResponse } from '../services/api'
+import React, { useMemo, useRef, useState } from 'react'
+import { Mic, MicOff, Send } from 'lucide-react'
+import { createSpeechRecognition, getEmotionMeta, supportsSpeechRecognition } from '../utils/helpers'
 
-const ChatInput = ({ onSendMessage, emotion, isLoading }) => {
+const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
   const [message, setMessage] = useState('')
-  const [isRecording, setIsRecording] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const mediaRecorderRef = useRef(null)
+  const [isListening, setIsListening] = useState(false)
+  const [speechError, setSpeechError] = useState('')
+  const recognitionRef = useRef(null)
+  const speechEnabled = useMemo(() => supportsSpeechRecognition(), [])
+  const emotionMeta = getEmotionMeta(emotion)
 
-  // Handle text input submit
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    if (message.trim() && !isLoading) {
-      onSendMessage(message)
-      setMessage('')
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
     }
+    setIsListening(false)
   }
 
-  // Handle voice input
-  const handleVoiceInput = async () => {
-    if (isRecording) {
-      // Stop recording
-      stopRecording(mediaRecorderRef.current)
-      setIsRecording(false)
-    } else {
-      // Start recording
-      setIsRecording(true)
-      mediaRecorderRef.current = await startRecording(async (audioBlob) => {
-        try {
-          const response = await transcribeAudio(audioBlob)
-          if (response.text) {
-            onSendMessage(response.text)
-          }
-        } catch (error) {
-          console.error('Error transcribing audio:', error)
-        }
-      })
+  const handleVoiceToggle = () => {
+    if (!speechEnabled || isLoading) return
+
+    if (isListening) {
+      stopListening()
+      return
     }
+
+    setSpeechError('')
+
+    const recognition = createSpeechRecognition(
+      (text, isFinal) => {
+        setMessage(text)
+        if (isFinal) setIsListening(false)
+      },
+      (errorType) => {
+        if (errorType === 'not-allowed' || errorType === 'service-not-allowed') {
+          setSpeechError('Microphone permission denied. Please allow mic access in browser settings.')
+        } else if (errorType === 'no-speech') {
+          setSpeechError('No clear speech detected. Please try again and speak a little louder.')
+        } else {
+          setSpeechError('Voice input failed. Please retry, or type your message.')
+        }
+        setIsListening(false)
+      },
+      () => {
+        setIsListening(false)
+      }
+    )
+
+    if (!recognition) return
+    recognitionRef.current = recognition
+    setIsListening(true)
+    recognition.start()
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    const value = message.trim()
+    if (!value || isLoading) return
+
+    onSendMessage(value)
+    setMessage('')
+    stopListening()
   }
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4">
-      {/* Emotion indicator */}
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-medium text-gray-500">Detected Emotion:</span>
-        <span className="text-2xl">{getEmotionEmoji(emotion)}</span>
-        <span className="text-sm font-medium text-gray-700 capitalize">{emotion}</span>
+    <div className="border-t border-slate-200 bg-white/90 px-4 py-4 backdrop-blur">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="text-xs text-slate-500">Voice + text input enabled</div>
+        <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${emotionMeta.chipClass}`}>
+          Emotion: {emotionMeta.label}
+        </span>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        {/* Text input */}
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type your message..."
-          disabled={isLoading || isRecording}
-          className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-400"
-        />
-
-        {/* Voice button */}
+      <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <button
           type="button"
-          onClick={handleVoiceInput}
-          disabled={isLoading}
-          className={`rounded-lg p-3 transition-all ${
-            isRecording
-              ? 'bg-red-500 text-white voice-pulse'
-              : 'bg-primary/10 text-primary hover:bg-primary/20'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
-          title={isRecording ? 'Stop recording' : 'Start recording'}
+          onClick={handleVoiceToggle}
+          disabled={!speechEnabled || isLoading}
+          className={`relative rounded-xl border p-3 transition ${
+            isListening
+              ? 'border-rose-300 bg-rose-100 text-rose-700 voice-pulse'
+              : 'border-slate-200 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200'
+          } disabled:cursor-not-allowed disabled:opacity-60`}
+          title={speechEnabled ? 'Start/stop voice input' : 'Speech recognition is not supported in this browser'}
         >
-          <Mic size={20} />
+          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
         </button>
 
-        {/* Send button */}
+        <input
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="Describe your issue (order delay, refund, wrong product)..."
+          className="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:bg-white"
+          disabled={isLoading}
+        />
+
         <button
           type="submit"
           disabled={!message.trim() || isLoading}
-          className="rounded-lg bg-primary p-3 text-white transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-12 rounded-xl bg-slate-900 px-4 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Send message"
         >
-          <Send size={20} />
+          <Send size={18} />
         </button>
       </form>
 
-      {/* Recording indicator */}
-      {isRecording && (
-        <div className="mt-2 flex items-center gap-2 text-sm text-red-600">
-          <div className="h-2 w-2 animate-pulse rounded-full bg-red-600"></div>
-          Recording...
-        </div>
+      {!speechEnabled && (
+        <p className="mt-2 text-xs text-amber-700">Voice recognition is unavailable in this browser. Use Chrome/Edge for mic-to-text.</p>
       )}
+      {isListening && <p className="mt-2 text-xs font-medium text-rose-700">Listening... speak clearly, then press mic again to stop.</p>}
+      {!!speechError && <p className="mt-2 text-xs font-medium text-rose-700">{speechError}</p>}
     </div>
   )
 }
