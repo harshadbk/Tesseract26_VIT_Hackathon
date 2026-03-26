@@ -1,10 +1,19 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   chatWithAgent,
   createEscalation,
-  updateEscalation
+  updateEscalation,
+  getChatHistory
 } from '../services/api'
-import { speakText } from '../utils/helpers'
+import {
+  speakText,
+  detectEmotion,
+  buildRiskLevel,
+  smoothEmotion,
+  makeMessage,
+  createConversationRecord,
+  withConversationUpdates
+} from '../utils/helpers'
 
 const ConversationCtx = createContext()
 
@@ -23,50 +32,6 @@ const EMPTY_INSIGHTS = {
   shouldEscalate: false
 }
 
-const detectEmotion = (text = '') => {
-  const lowerText = text.toLowerCase()
-  if (/angry|anry|furious|hate|ridiculous|worst/.test(lowerText)) return 'angry'
-  if (/frustrated|frustated|frastated|upset|annoyed|disappointed|again|asap|urgent|right now|immediately|hurry|do\s+(it|this)\s+fast|fast please|quickly|faster|\bquick\b/.test(lowerText)) return 'frustrated'
-  if (/confused|unclear|not sure|dont understand|don't understand/.test(lowerText)) return 'confused'
-  if (/thanks|thank you|great|awesome|perfect/.test(lowerText)) return 'happy'
-  return 'calm'
-}
-
-const buildRiskLevel = (emotion, messageCount) => {
-  if (emotion === 'angry') return 'critical'
-  if (emotion === 'frustrated') return 'high'
-  if (messageCount >= 5) return 'medium'
-  return 'low'
-}
-
-const smoothEmotion = (llmEmotion = 'calm', localEmotion = 'calm') => {
-  const normalizedLlm = String(llmEmotion || 'calm').toLowerCase()
-  const normalizedLocal = String(localEmotion || 'calm').toLowerCase()
-  const rank = { calm: 0, confused: 0, happy: 0, neutral: 0, frustrated: 1, angry: 2 }
-  const llmRank = rank[normalizedLlm] ?? 0
-  const localRank = rank[normalizedLocal] ?? 0
-  return localRank >= llmRank ? normalizedLocal : normalizedLlm
-}
-
-const makeMessage = (text, sender, emotion = 'calm') => ({
-  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  text,
-  sender,
-  emotion,
-  timestamp: new Date().toISOString()
-})
-
-const createConversationRecord = (userId, userName) => ({
-  id: `conv-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  userId,
-  userName,
-  messages: [],
-  emotion: 'calm',
-  isEscalated: false,
-  summary: '',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
-})
 
 export const useConversation = () => {
   const context = useContext(ConversationCtx)
@@ -76,13 +41,6 @@ export const useConversation = () => {
   return context
 }
 
-const withConversationUpdates = (conversations, updatedConversation) => {
-  const idx = conversations.findIndex((item) => item.id === updatedConversation.id)
-  if (idx === -1) return [updatedConversation, ...conversations]
-  const next = [...conversations]
-  next[idx] = updatedConversation
-  return next
-}
 
 export default function ConversationContext({ children }) {
   const [users] = useState(DEFAULT_USERS)
@@ -91,25 +49,58 @@ export default function ConversationContext({ children }) {
   const [escalations, setEscalations] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [aiInsights, setAiInsights] = useState(EMPTY_INSIGHTS)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const conversationsRef = useRef(conversations)
+
+  useEffect(() => {
+    conversationsRef.current = conversations
+  }, [conversations])
 
   const currentConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === currentConversationId) || null,
     [conversations, currentConversationId]
   )
 
-  const startConversation = useCallback((userId, userName) => {
-    setConversations((prev) => {
-      const existing = prev.find((item) => item.userId === userId && !item.isArchived)
-      if (existing) {
-        setCurrentConversationId(existing.id)
-        return prev
-      }
+  const startConversation = useCallback(async (userId, userName) => {
+    const existing = conversationsRef.current.find((item) => item.userId === userId && !item.isArchived)
+    
+    let targetConversationId = null
+    if (existing) {
+      targetConversationId = existing.id
+      console.log(`[ConversationContext] Found existing conversation: ${targetConversationId}`)
+    } else {
+      const created = createConversationRecord(userId, userName)
+      targetConversationId = created.id
+      console.log(`[ConversationContext] Created new conversation: ${targetConversationId}`)
+      setConversations((prev) => [created, ...prev])
+    }
+    
+    setCurrentConversationId(targetConversationId)
 
-      const createdConversation = createConversationRecord(userId, userName)
+    try {
+      console.log(`[ConversationContext] Fetching history for ${userId}...`)
+      const rawHistory = await getChatHistory(userId)
+      console.log(`[ConversationContext] History fetched: ${rawHistory?.length || 0} messages.`)
+      
+      if (!rawHistory || rawHistory.length === 0) return
 
-      setCurrentConversationId(createdConversation.id)
-      return [createdConversation, ...prev]
-    })
+      const mappedHistory = rawHistory.map(msg => ({
+        id: `${msg.timestamp}-${Math.random().toString(16).slice(2)}`,
+        text: msg.content,
+        sender: msg.role === 'assistant' ? 'bot' : 'user',
+        emotion: msg.emotion || 'calm',
+        timestamp: msg.timestamp
+      }))
+
+      setConversations((prev) => {
+        const target = prev.find(c => c.id === targetConversationId)
+        if (!target) return prev
+        const updated = { ...target, messages: mappedHistory }
+        return withConversationUpdates(prev, updated)
+      })
+    } catch (err) {
+      console.error('[ConversationContext] Background history fetch failed:', err)
+    }
   }, [])
 
   const addMessage = useCallback((message, sender = 'user') => {
@@ -219,7 +210,8 @@ export default function ConversationContext({ children }) {
         await escalateConversation(summary, refreshedConversation)
       }
 
-      speakText(botReply, resolvedEmotion)
+      setIsSpeaking(true)
+      speakText(botReply, resolvedEmotion, () => setIsSpeaking(false))
     } catch (error) {
       const botMessage = makeMessage(
         'I am facing a temporary issue right now. Please retry, and I will continue from our context.',
@@ -348,6 +340,7 @@ export default function ConversationContext({ children }) {
     currentConversation,
     escalations,
     isLoading,
+    isSpeaking,
     aiInsights,
     startConversation,
     addMessage,

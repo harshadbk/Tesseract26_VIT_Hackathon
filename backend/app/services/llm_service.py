@@ -131,8 +131,7 @@ def quick_analyze_user_query(user_input: str, known_order_id: str = "") -> Dict[
 
 
 def call_llm(
-    system_prompt: str,
-    user_prompt: str,
+    messages: List[Dict[str, str]],
     temperature: Optional[float] = None,
     preferred_model: Optional[str] = None,
 ) -> str:
@@ -160,10 +159,7 @@ def call_llm(
         try:
             response = client.chat.completions.create(
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                messages=messages,
                 temperature=run_temperature,
             )
             _runtime_preferred_model = model_name
@@ -193,7 +189,7 @@ def analyze_user_query(
 ) -> Dict[str, Any]:
     conversation_history = conversation_history or []
     history_text = "\n".join(
-        [f"{item.get('sender', 'user')}: {item.get('text', '')}" for item in conversation_history[-10:]]
+        [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in conversation_history[-15:]]
     )
 
     prompt = f"""
@@ -214,9 +210,19 @@ User message:
 {user_input}
 """
 
+    history_messages = [
+        {"role": item.get("role", "user"), "content": item.get("content", "")}
+        for item in conversation_history[-10:]
+    ]
+
+    messages = [
+        {"role": "system", "content": "You are a strict JSON analyzer. Never return markdown."},
+        *history_messages,
+        {"role": "user", "content": prompt},
+    ]
+
     raw = call_llm(
-        "You are a strict JSON analyzer. Never return markdown.",
-        prompt,
+        messages,
         temperature=0.0,
         preferred_model=settings.groq_fast_model,
     )
@@ -253,83 +259,79 @@ def generate_chat_result(
     recent_orders_json = json.dumps(recent_orders or [], ensure_ascii=True)
     analysis_json = json.dumps(analysis, ensure_ascii=True)
     history_json = json.dumps(conversation_history or [], ensure_ascii=True)
-    last_bot_reply = ""
+    last_assistant_reply = ""
     for item in reversed(conversation_history or []):
-        if item.get("sender") == "bot" and item.get("text"):
-            last_bot_reply = str(item.get("text"))
+        if item.get("role") == "assistant" and item.get("content"):
+            last_assistant_reply = str(item.get("content"))
             break
 
+    user_emotion = analysis.get("emotion", "calm")
+    tone_instruction = "Give a direct, helpful answer."
+    if user_emotion == "angry" or user_emotion == "frustrated":
+        tone_instruction = "Use a calm, empathetic, and understanding tone. Acknowledge their situation simply."
+    elif analysis.get("intent") == "unknown":
+        tone_instruction = "Give a simple, guiding response to help them clarify."
+
+    system_prompt = f"""
+You are a professional, human-like voice support assistant.
+Your goal is to be helpful, concise, and natural.
+
+GROUNDING RULES:
+- Use EXACT user-provided facts from history (e.g., if user says "tomorrow", use "tomorrow").
+- Never generalize or reinterpret specific details.
+- Prioritize facts in conversation history over database defaults.
+
+VOICE & TONE RULES:
+- Style: Conversational, clear, and punchy.
+- Tone: {tone_instruction}
+- BE HUMAN: No scripted apologies like "We apologize for the inconvenience".
+- Clarity: Use short, easy-to-read sentences (TTS-friendly). Maximum 2 sentences.
+- Conciseness: Total response under 25 words.
+
+INSTRUCTIONS:
+- You must return STRICT JSON only.
+- If analysis.waiting_escalation is true, acknowledge they are in the queue naturally.
+- Don't say "I am checking". Just give the result.
+"""
+
     prompt = f"""
-You are a professional e-commerce support AI.
-Use provided database context and user message to generate final result.
+Generate the support response based on this context and user message:
 
-User message:
-{user_input}
+CONTEXT:
+User message: {user_input}
+Analysis: {analysis_json}
+Known order_id: {known_order_id or "none"}
+Issue data: {issue_json}
+Order data: {order_json}
+Etiquette: {etiquette_json}
 
-Initial analysis:
-{analysis_json}
+Avoid repeating the last assistant reply: {last_assistant_reply or "none"}
 
-Conversation history:
-{history_json}
-
-Known order_id from memory:
-{known_order_id or "none"}
-
-Issue mapped by intent:
-{issue_json}
-
-Primary solution from issues table:
-{issue_solution or "none"}
-
-Order mapped by order_id:
-{order_json}
-
-Etiquette rules:
-{etiquette_json}
-
-Related issues (database):
-{catalog_json}
-
-Recent order references (database):
-{recent_orders_json}
-
-Rules:
-- If known_order_id is present OR analysis.order_id is present, treat order id as already provided.
-- Do NOT ask user to provide/reconfirm order id again when it is already known.
-- If order_data exists, use its status/delivery_date in response.
-- If order_data is null but order id is known, acknowledge lookup limitation and guide the user with the next best action.
-- If Primary solution from issues table is present, use that as the main troubleshooting action.
-- If Primary solution is empty, pick the closest item from Related issues and use its solution.
-- If issue_data.category is basic_ai_fallback, still follow it as valid guidance.
-- Apply etiquette rules in tone when they are present.
-- Respond quickly and directly; avoid filler.
-- Do NOT say: "please give me a moment", "this may take a few seconds", "I am checking now".
-- Do NOT use waiting phrases like "I will check", "I am looking into this", or "please wait".
-- Response must be short: maximum 2 sentences and under 35 words.
-- Include one concrete next step in the response.
-- Avoid repeating the exact same wording from prior assistant response.
-- Keep response practical, empathetic, and varied in phrasing.
-- Set "escalate" to true only when user explicitly asks for a human agent OR user is angry/frustrated and issue remains unresolved after repeated attempts.
-- If "escalate" is false, do not mention handoff to human agent in response.
-
-Previous assistant reply to avoid repeating:
-{last_bot_reply or "none"}
-
-Return STRICT JSON only:
+Return STRICT JSON:
 {{
-  "intent": "order_not_delivered|refund_delay|wrong_product|payment_issue",
-  "emotion": "angry|frustrated|calm",
-  "response": "human-like and actionable response",
+  "intent": "string",
+  "emotion": "string",
+  "response": "natural conversational reply",
   "escalate": true_or_false,
-  "summary": "single-line summary (always non-empty)",
+  "summary": "short record summary",
   "resolved": false,
-  "order_id": "current_order_id_or_empty"
+  "order_id": "string"
 }}
 """
 
+    history_messages = [
+        {"role": item.get("role", "user"), "content": item.get("content", "")}
+        for item in conversation_history[-15:]
+    ]
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *history_messages,
+        {"role": "user", "content": prompt},
+    ]
+
     raw = call_llm(
-        "Return strict JSON only. No prose outside JSON.",
-        prompt,
+        messages,
         temperature=0.25,
         preferred_model=settings.groq_fast_model,
     )

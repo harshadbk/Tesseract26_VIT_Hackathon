@@ -173,3 +173,42 @@ def save_escalation(summary: str, emotion: str, intent: str = "unknown", order_i
         return supabase.table("escalations").insert(payload).execute()
     except Exception:
         return None
+
+
+def save_chat_message(user_id: str, role: str, content: str, emotion: str = "calm"):
+    """Saves a single chat message to Supabase chat_history table."""
+    if not supabase:
+        return None
+
+    payload = {
+        "user_id": user_id,
+        "role": role,
+        "content": content,
+        "emotion": emotion,
+    }
+
+    try:
+        return supabase.table("chat_history").insert(payload).execute()
+    except Exception as e:
+        print(f"Error saving chat message: {e}")
+        return None
+
+
+def get_chat_history(user_id: str, limit: int = 30) -> List[Dict[str, Any]]:
+    """Retrieves recent chat history for a user from Supabase."""
+    if not supabase:
+        return []
+
+    try:
+        rows = _safe_execute(
+            supabase.table("chat_history")
+            .select("role,content,emotion,timestamp")
+            .eq("user_id", user_id)
+            .order("timestamp", desc=True)
+            .limit(limit)
+        )
+        # Reverse to get chronological order
+        return rows[::-1]
+    except Exception as e:
+        print(f"Error fetching chat history: {e}")
+        return []

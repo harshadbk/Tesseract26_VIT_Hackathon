@@ -1,11 +1,15 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { createSpeechRecognition, getEmotionMeta, supportsSpeechRecognition } from '../utils/helpers'
+import { useConversation } from '../context/ConversationContext'
 
 const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
+  const { isSpeaking } = useConversation()
   const [message, setMessage] = useState('')
   const [isListening, setIsListening] = useState(false)
+  const [autoVoice, setAutoVoice] = useState(false)
   const [speechError, setSpeechError] = useState('')
   const recognitionRef = useRef(null)
+  const autoSendTimeoutRef = useRef(null)
   const speechEnabled = useMemo(() => supportsSpeechRecognition(), [])
   const emotionMeta = getEmotionMeta(emotion)
 
@@ -29,7 +33,19 @@ const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
     const recognition = createSpeechRecognition(
       (text, isFinal) => {
         setMessage(text)
-        if (isFinal) setIsListening(false)
+        if (isFinal) {
+          if (autoVoice) {
+            // Give the UI a tiny moment to show the final text before sending
+            clearTimeout(autoSendTimeoutRef.current)
+            autoSendTimeoutRef.current = setTimeout(() => {
+              onSendMessage(text)
+              setMessage('')
+              stopListening()
+            }, 500)
+          } else {
+            setIsListening(false)
+          }
+        }
       },
       (errorType) => {
         if (errorType === 'not-allowed' || errorType === 'service-not-allowed') {
@@ -51,6 +67,28 @@ const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
     setIsListening(true)
     recognition.start()
   }
+
+  // Handle Automatic Voice Lifecycle
+  React.useEffect(() => {
+    if (!autoVoice || !speechEnabled) {
+      if (isListening) stopListening()
+      return
+    }
+
+    // Anti-Feedback: Stop listening when AI speaks or is processing
+    if (isSpeaking || isLoading) {
+      if (isListening) stopListening()
+    } else {
+      // Auto-Start listening when AI is silent and ready
+      if (!isListening) {
+        handleVoiceToggle()
+      }
+    }
+
+    return () => {
+      clearTimeout(autoSendTimeoutRef.current)
+    }
+  }, [autoVoice, isSpeaking, isLoading, speechEnabled])
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -86,6 +124,20 @@ const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
           {isListening ? 'Stop Voice' : 'Start Voice'}
         </button>
 
+        <button
+          type="button"
+          onClick={() => setAutoVoice(!autoVoice)}
+          disabled={!speechEnabled}
+          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+            autoVoice
+              ? 'border-sky-300 bg-sky-100 text-sky-700 shadow-sm shadow-sky-200'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+          }`}
+          title="Enable hands-free conversation"
+        >
+          {autoVoice ? 'Auto-Voice: ON' : 'Auto-Voice: OFF'}
+        </button>
+
         <input
           value={message}
           onChange={(event) => setMessage(event.target.value)}
@@ -107,7 +159,9 @@ const ChatInput = ({ onSendMessage, emotion = 'calm', isLoading = false }) => {
       {!speechEnabled && (
         <p className="mt-2 text-xs text-amber-700">Voice recognition is unavailable in this browser. Use Chrome/Edge for mic-to-text.</p>
       )}
-      {isListening && <p className="mt-2 text-xs font-medium text-rose-700">Listening... speak clearly, then press mic again to stop.</p>}
+      {isListening && !autoVoice && <p className="mt-2 text-xs font-medium text-rose-700">Listening... speak clearly, then press mic again to stop.</p>}
+      {isListening && autoVoice && <p className="mt-2 text-xs font-medium text-sky-700 animate-pulse">Auto-Voice Active: Listening for your message...</p>}
+      {isSpeaking && <p className="mt-2 text-xs font-medium text-emerald-700 italic">AI is speaking... mic paused to prevent feedback.</p>}
       {!!speechError && <p className="mt-2 text-xs font-medium text-rose-700">{speechError}</p>}
     </div>
   )
