@@ -1,56 +1,41 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-_MEMORY: Dict[str, Dict[str, Any]] = {}
+from app.services.db_service import save_chat_message, get_chat_history
+
+_ORDER_CACHE: Dict[str, str] = {}
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _default_state() -> Dict[str, Any]:
-    now = _now_iso()
+def get_user_state(user_id: str) -> Dict[str, Any]:
+    """
+    Returns the user state including order_id and recent history.
+    History is fetched from Supabase.
+    """
+    key = user_id or "default_user"
+    history = get_chat_history(key, limit=30)
+    
     return {
-        "order_id": "",
-        "history": [],
-        "created_at": now,
-        "updated_at": now,
+        "order_id": _ORDER_CACHE.get(key, ""),
+        "history": history,
+        "updated_at": _now_iso(),
     }
 
 
-def get_user_state(user_id: str) -> Dict[str, Any]:
-    key = user_id or "default_user"
-    if key not in _MEMORY:
-        _MEMORY[key] = _default_state()
-    return _MEMORY[key]
-
-
-def append_history(user_id: str, sender: str, text: str, emotion: str = "") -> None:
-    state = get_user_state(user_id)
-    now = _now_iso()
-    state["history"].append(
-        {
-            "sender": sender,
-            "text": text,
-            "emotion": emotion,
-            "timestamp": now,
-        }
-    )
-    # Keep bounded memory for stability/cost.
-    state["history"] = state["history"][-20:]
-    state["updated_at"] = now
+def append_history(user_id: str, role: str, content: str, emotion: str = "") -> None:
+    """Saves a message to Supabase."""
+    save_chat_message(user_id, role, content, emotion)
 
 
 def set_order_id(user_id: str, order_id: str) -> None:
-    state = get_user_state(user_id)
-    state["order_id"] = (order_id or "").strip()
-    state["updated_at"] = _now_iso()
+    _ORDER_CACHE[user_id] = (order_id or "").strip()
 
 
 def clear_order_id(user_id: str) -> None:
-    state = get_user_state(user_id)
-    state["order_id"] = ""
-    state["updated_at"] = _now_iso()
+    _ORDER_CACHE[user_id] = ""
 
 
 def list_user_states() -> Dict[str, Dict[str, Any]]:

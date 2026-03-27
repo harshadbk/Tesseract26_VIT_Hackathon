@@ -85,10 +85,17 @@ export const createSpeechRecognition = (onResult, onError, onEnd) => {
 }
 
 export const speakText = (text, emotion = 'calm', onEnd = null) => {
-  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return
+  if (typeof window === 'undefined' || !window.speechSynthesis || !text) {
+    if (onEnd) onEnd()
+    return
+  }
+  
+  // Cancel any ongoing speech
   window.speechSynthesis.cancel()
+  
   const utterance = new SpeechSynthesisUtterance(text)
   const mood = (emotion || 'calm').toLowerCase()
+  
   if (mood === 'angry') {
     utterance.rate = 1.04
     utterance.pitch = 0.88
@@ -102,7 +109,66 @@ export const speakText = (text, emotion = 'calm', onEnd = null) => {
     utterance.rate = 0.96
     utterance.pitch = 1
   }
+  
   utterance.volume = 0.9
-  if (onEnd) utterance.onend = onEnd
+  
+  if (onEnd) {
+    utterance.onend = onEnd
+    utterance.onerror = onEnd // Also trigger onEnd on error so we don't get stuck in isSpeaking=true
+  }
+  
   window.speechSynthesis.speak(utterance)
+}
+
+export const detectEmotion = (text = '') => {
+  const lowerText = text.toLowerCase()
+  if (/angry|anry|furious|hate|ridiculous|worst/.test(lowerText)) return 'angry'
+  if (/frustrated|frustated|frastated|upset|annoyed|disappointed|again|asap|urgent|right now|immediately|hurry|do\s+(it|this)\s+fast|fast please|quickly|faster|\bquick\b/.test(lowerText)) return 'frustrated'
+  if (/confused|unclear|not sure|dont understand|don't understand/.test(lowerText)) return 'confused'
+  if (/thanks|thank you|great|awesome|perfect/.test(lowerText)) return 'happy'
+  return 'calm'
+}
+
+export const buildRiskLevel = (emotion, messageCount) => {
+  if (emotion === 'angry') return 'critical'
+  if (emotion === 'frustrated') return 'high'
+  if (messageCount >= 5) return 'medium'
+  return 'low'
+}
+
+export const smoothEmotion = (llmEmotion = 'calm', localEmotion = 'calm') => {
+  const normalizedLlm = String(llmEmotion || 'calm').toLowerCase()
+  const normalizedLocal = String(localEmotion || 'calm').toLowerCase()
+  const rank = { calm: 0, confused: 0, happy: 0, neutral: 0, frustrated: 1, angry: 2 }
+  const llmRank = rank[normalizedLlm] ?? 0
+  const localRank = rank[normalizedLocal] ?? 0
+  return localRank >= llmRank ? normalizedLocal : normalizedLlm
+}
+
+export const makeMessage = (text, sender, emotion = 'calm') => ({
+  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  text,
+  sender,
+  emotion,
+  timestamp: new Date().toISOString()
+})
+
+export const createConversationRecord = (userId, userName) => ({
+  id: `conv-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  userId,
+  userName,
+  messages: [],
+  emotion: 'calm',
+  isEscalated: false,
+  summary: '',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+})
+
+export const withConversationUpdates = (conversations, updatedConversation) => {
+  const idx = conversations.findIndex((item) => item.id === updatedConversation.id)
+  if (idx === -1) return [updatedConversation, ...conversations]
+  const next = [...conversations]
+  next[idx] = updatedConversation
+  return next
 }

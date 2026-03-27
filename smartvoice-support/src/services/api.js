@@ -1,12 +1,13 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://tesseract26-vit-backend.onrender.com'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const ENABLE_BACKEND = import.meta.env.VITE_ENABLE_BACKEND !== 'false'
 const BACKEND_RETRY_MS = Number(import.meta.env.VITE_BACKEND_RETRY_MS || 8000)
 let backendDownUntil = 0
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -100,5 +101,16 @@ export const updateEscalation = async (escalationId, updates) => {
   return {
     id: escalationId,
     ...updates
+  }
+}
+
+export const getChatHistory = async (userId) => {
+  if (!shouldUseBackend()) return []
+  try {
+    const response = await api.get(`/chat/history/${userId}`)
+    return response.data?.history || []
+  } catch (error) {
+    handleBackendFailure(error)
+    return []
   }
 }
