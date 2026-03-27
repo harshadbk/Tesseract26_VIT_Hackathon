@@ -8,17 +8,26 @@ const colorMap = {
   slate: 'border-slate-200 bg-slate-50/90 text-slate-700'
 }
 
+const iconMap = {
+  blue: '🔵',
+  red: '🔴',
+  green: '🟢',
+  orange: '🟡',
+  slate: '⚪'
+}
+
 const StatsCard = ({ label, value, color = 'slate' }) => {
   const accent = colorMap[color] || colorMap.slate
+  const icon = iconMap[color] || '⚪'
 
   return (
-    <div className="card-lift panel-surface vivid-surface tone-sky rounded-2xl p-4 soft-appear">
-      <div className="flex items-center justify-between gap-3">
+    <div className="card-lift panel-surface vivid-surface tone-sky rounded-xl p-3 glow-breathe">
+      <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="font-display text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-1 font-display text-2xl font-extrabold text-slate-900">{value}</p>
+          <p className="font-display text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-0.5 font-display text-xl font-extrabold text-slate-900 number-pop">{value}</p>
         </div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${accent}`}>Live</span>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold status-pulse ${accent}`}>Live</span>
       </div>
     </div>
   )
