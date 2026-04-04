@@ -8,17 +8,9 @@ const colorMap = {
   slate: 'border-slate-200 bg-slate-50/90 text-slate-700'
 }
 
-const iconMap = {
-  blue: '🔵',
-  red: '🔴',
-  green: '🟢',
-  orange: '🟡',
-  slate: '⚪'
-}
 
 const StatsCard = ({ label, value, color = 'slate' }) => {
   const accent = colorMap[color] || colorMap.slate
-  const icon = iconMap[color] || '⚪'
 
   return (
     <div className="card-lift panel-surface vivid-surface tone-sky rounded-xl p-3 glow-breathe">

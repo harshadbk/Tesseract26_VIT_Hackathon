@@ -1,352 +1,247 @@
-import json
-import re
-from typing import Any, Dict, List, Optional
-from app.config.settings import settings
+import os
+import weaviate
+from dotenv import load_dotenv
 
-_client = None
-_runtime_preferred_model = None
-DEFAULT_MODEL_FALLBACKS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-]
-
-_INTENT_KEYWORDS = {
-    "order_not_delivered": [
-        "late",
-        "delay",
-        "delayed",
-        "not delivered",
-        "where is my order",
-        "tracking",
-        "shipment",
-        "delivery",
-        "status",
-    ],
-    "refund_delay": [
-        "refund",
-        "money back",
-        "return",
-        "returned",
-        "refund status",
-        "refund not",
-    ],
-    "wrong_product": [
-        "wrong product",
-        "wrong item",
-        "damaged",
-        "broken",
-        "defective",
-        "different item",
-    ],
-    "payment_issue": [
-        "payment",
-        "card",
-        "upi",
-        "transaction",
-        "declined",
-        "failed",
-        "charged",
-    ],
-}
+# LangChain
+from langchain_community.vectorstores import Weaviate
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_classic.memory import ConversationBufferMemory
+from langchain_classic.chains import ConversationalRetrievalChain
+from langchain_classic.prompts import PromptTemplate
+from langchain_groq import ChatGroq
 
 
-def _get_client():
-    global _client
-    if _client is not None:
-        return _client
+# ---------------- ENV ----------------
+load_dotenv()
 
-    if not settings.groq_api_key:
-        return None
+WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+WEAVIATE_URL = os.getenv("WEAVIATE_CLUSTER")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+
+# ---------------- GLOBALS ----------------
+vector_db = None
+rag_chain = None
+
+
+# ---------------- INIT FUNCTION ----------------
+def initialize_rag():
+    global vector_db, rag_chain
+
+    if rag_chain is not None:
+        return rag_chain
+
+    print("🚀 Initializing RAG...")
+
+    # ---------------- WEAVIATE ----------------
+    auth_config = weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY)
+
+    client = weaviate.Client(
+        url=WEAVIATE_URL,
+        auth_client_secret=auth_config,
+        timeout_config=(15, 120),
+    )
+
+    # ---------------- EMBEDDINGS ----------------
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    # ---------------- LOAD DATA ----------------
+    folder_path = r"D:\React Develeoment\Tesseract26_VIT_Hackathon\backend\data"
+    all_docs = []
+
+    if not os.path.exists(folder_path):
+        raise Exception(f"❌ Folder not found: {folder_path}")
+
+    for file in os.listdir(folder_path):
+        if file.endswith(".pdf"):
+            loader = PyPDFLoader(os.path.join(folder_path, file))
+            pages = loader.load()
+
+            for p in pages:
+                p.metadata["source"] = file
+
+            all_docs.extend(pages)
+
+    print(f"✅ Loaded {len(all_docs)} pages")
+
+    # ---------------- SPLIT ----------------
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=400,
+        chunk_overlap=50
+    )
+
+    docs = splitter.split_documents(all_docs)
+    docs = docs[:20]  # limit for testing
+
+    # ---------------- VECTOR STORE ----------------
+    vector_db = Weaviate.from_documents(
+        docs,
+        embeddings,
+        client=client,
+        by_text=False
+    )
+
+    retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+
+    # ---------------- MEMORY ----------------
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True,
+        output_key="answer"
+    )
+
+    # ---------------- LLM ----------------
+    llm = ChatGroq(
+        groq_api_key=GROQ_API_KEY,
+        model_name="llama-3.1-8b-instant"
+    )
+
+    # ---------------- PROMPT (🔥 MULTI-TASK AGENT WITH EMOTION & INTENSITY) ----------------
+    prompt = PromptTemplate(
+        input_variables=["context", "question", "chat_history"],
+        template="""
+You are an AI customer support assistant for an e-commerce platform.
+
+Your tasks:
+1. Detect user INTENT
+2. Detect user EMOTION
+3. Detect EMOTION INTENSITY (1-10)
+4. Generate a helpful response
+
+-------------------------
+
+🎯 INTENTS:
+- order_status
+- order_delay
+- refund_request
+- cancellation
+- order_id_issue
+- payment_issue
+- complaint
+- general_query
+- out_of_scope
+
+-------------------------
+
+💡 EMOTIONS:
+- happy
+- angry
+- frustrated
+- sad
+- anxious
+- neutral
+
+-------------------------
+
+⚠️ RULES:
+- If query is NOT e-commerce → mark intent as out_of_scope
+- NEVER hallucinate user data
+- If info missing → ASK for it
+- If user is angry/frustrated → be more polite + apologetic
+- Keep response short (2–4 lines)
+
+-------------------------
+
+📌 OUTPUT FORMAT (STRICT):
+
+Intent: <intent>
+Emotion: <emotion>
+Emotion Intensity: <1-10>
+Response: <final answer>
+
+-------------------------
+
+Context:
+{context}
+
+Chat History:
+{chat_history}
+
+User Question:
+{question}
+"""
+    )
+
+    # ---------------- RAG CHAIN ----------------
+    rag_chain = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=retriever,
+        memory=memory,
+        combine_docs_chain_kwargs={"prompt": prompt},
+        return_source_documents=True
+    )
+
+    print("✅ RAG Ready!")
+
+    return rag_chain
+
+
+# ---------------- MAIN FUNCTION ----------------
+def generate_rag_chat_result(user_input: str):
     try:
-        from groq import Groq
-    except Exception as exc:
-        raise RuntimeError(
-            "Groq SDK is missing. Run: pip install -r backend/requirements.txt"
-        ) from exc
+        chain = initialize_rag()
 
-    _client = Groq(api_key=settings.groq_api_key)
-    return _client
+        result = chain.invoke({
+            "question": user_input
+        })
 
+        answer_text = result.get("answer", "")
 
-def _extract_json(text: str) -> Dict[str, Any]:
-    if not text:
-        return {}
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(text[start : end + 1])
-    return {}
+        # Defaults
+        intent = "general_query"
+        emotion = "neutral"
+        emotion_intensity = 5
+        response = answer_text
 
+        # ---------------- PARSE OUTPUT (STRICT FORMAT) ----------------
+        # Expecting:
+        # Intent: <intent>
+        # Emotion: <emotion>
+        # Emotion Intensity: <1-10>
+        # Response: <final answer>
+        if "Intent:" in answer_text and "Response:" in answer_text:
+            # Split by 'Response:'
+            parts = answer_text.split("Response:")
+            header = parts[0]
+            response = parts[1].strip()
 
-def _extract_order_id(text: str) -> str:
-    if not text:
-        return ""
-    match = re.search(r"(?:order(?:\s*id)?\s*[:#-]?\s*)(\d{1,12})", text, flags=re.IGNORECASE)
-    if match:
-        return match.group(1)
-    hash_match = re.search(r"#(\d{1,12})", text)
-    if hash_match:
-        return hash_match.group(1)
-    return ""
+            # Extract intent, emotion, emotion intensity
+            if "Emotion Intensity:" in header:
+                # Intent: ... Emotion: ... Emotion Intensity: ...
+                try:
+                    intent_part, rest = header.split("Emotion:")
+                    intent = intent_part.replace("Intent:", "").strip()
+                    emotion_part, intensity_part = rest.split("Emotion Intensity:")
+                    emotion = emotion_part.strip()
+                    emotion_intensity = int(intensity_part.strip())
+                except Exception:
+                    # fallback to basic parsing
+                    if "Emotion:" in header:
+                        intent = header.split("Emotion:")[0].replace("Intent:", "").strip()
+                        emotion = header.split("Emotion:")[1].strip()
+            elif "Emotion:" in header:
+                intent = header.split("Emotion:")[0].replace("Intent:", "").strip()
+                emotion = header.split("Emotion:")[1].strip()
+            else:
+                intent = header.replace("Intent:", "").strip()
 
+        return {
+            "intent": intent,
+            "emotion": emotion,
+            "emotion_intensity": emotion_intensity,
+            "answer": response,
+            "sources": [
+                doc.metadata for doc in result.get("source_documents", [])
+            ]
+        }
 
-def quick_analyze_user_query(user_input: str, known_order_id: str = "") -> Dict[str, Any]:
-    text = (user_input or "").strip().lower()
-    score_map = {intent: 0 for intent in _INTENT_KEYWORDS}
-
-    for intent, keywords in _INTENT_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in text:
-                score_map[intent] += 1
-
-    intent = max(score_map, key=score_map.get)
-    best_score = score_map[intent]
-    confidence = min(0.95, 0.5 + (best_score * 0.12)) if best_score > 0 else 0.0
-
-    emotion = "calm"
-    if re.search(r"\bangr\w*\b|furious|worst|ridiculous|hate|\bmad\b|\bpissed\b", text):
-        emotion = "angry"
-        confidence = max(confidence, 0.78)
-    elif re.search(
-        r"\bfrust\w*\b|\bfrast\w*\b|upset|annoy\w*|disappoint\w*|again|still|irritat\w*|"
-        r"\basap\b|\burgent\b|right now|immediately|hurry|"
-        r"\bdo\s+(it|this)\s+fast\b|\bfast\s+please\b|quickly|faster|\bquick\b",
-        text,
-    ):
-        emotion = "frustrated"
-        confidence = max(confidence, 0.72)
-
-    order_id = _extract_order_id(user_input) or (known_order_id or "")
-    return {
-        "intent": intent,
-        "emotion": emotion,
-        "order_id": order_id,
-        "confidence": round(confidence, 3),
-    }
-
-
-def call_llm(
-    messages: List[Dict[str, str]],
-    temperature: Optional[float] = None,
-    preferred_model: Optional[str] = None,
-) -> str:
-    global _runtime_preferred_model
-    client = _get_client()
-    if not settings.groq_api_key:
-        raise RuntimeError("GROQ_API_KEY is missing. Set it in backend/.env.")
-    if not client:
-        raise RuntimeError("Groq client could not be created. Check SDK installation and API key.")
-
-    model_candidates = []
-    if _runtime_preferred_model:
-        model_candidates.append(_runtime_preferred_model)
-    if preferred_model:
-        model_candidates.append(preferred_model)
-    model_candidates.append(settings.groq_model)
-    model_candidates.extend(DEFAULT_MODEL_FALLBACKS)
-    # Preserve order while removing duplicates.
-    seen = set()
-    model_candidates = [m for m in model_candidates if not (m in seen or seen.add(m))]
-    last_exception = None
-    run_temperature = settings.groq_temperature if temperature is None else temperature
-
-    for model_name in model_candidates:
-        try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=run_temperature,
-            )
-            _runtime_preferred_model = model_name
-            return (response.choices[0].message.content or "").strip()
-        except Exception as exc:
-            last_exception = exc
-            error_text = str(exc).lower()
-            if _runtime_preferred_model and model_name == _runtime_preferred_model:
-                _runtime_preferred_model = None
-            if (
-                "decommissioned" in error_text
-                or ("model" in error_text and "not found" in error_text)
-                or "rate limit" in error_text
-                or "rate_limit_exceeded" in error_text
-                or "404" in error_text
-            ):
-                continue
-            break
-
-    raise RuntimeError(f"Groq request failed across models: {last_exception}")
-
-
-def analyze_user_query(
-    user_input: str,
-    conversation_history: Optional[List[Dict[str, Any]]] = None,
-    known_order_id: str = "",
-) -> Dict[str, Any]:
-    conversation_history = conversation_history or []
-    history_text = "\n".join(
-        [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in conversation_history[-15:]]
-    )
-
-    prompt = f"""
-Analyze this e-commerce support message and return STRICT JSON only:
-{{
-  "intent": "order_not_delivered|refund_delay|wrong_product|payment_issue",
-  "emotion": "angry|frustrated|calm",
-  "order_id": "string_or_empty",
-  "confidence": 0.0
-}}
-
-Known order_id from previous conversation: {known_order_id or "none"}
-
-Conversation history:
-{history_text}
-
-User message:
-{user_input}
-"""
-
-    history_messages = [
-        {"role": item.get("role", "user"), "content": item.get("content", "")}
-        for item in conversation_history[-10:]
-    ]
-
-    messages = [
-        {"role": "system", "content": "You are a strict JSON analyzer. Never return markdown."},
-        *history_messages,
-        {"role": "user", "content": prompt},
-    ]
-
-    raw = call_llm(
-        messages,
-        temperature=0.0,
-        preferred_model=settings.groq_fast_model,
-    )
-    parsed = _extract_json(raw)
-
-    if not parsed:
-        raise RuntimeError("LLM did not return valid JSON for query analysis.")
-
-    return {
-        "intent": str(parsed.get("intent", "")).strip(),
-        "emotion": str(parsed.get("emotion", "")).strip(),
-        "order_id": str(parsed.get("order_id", "")).strip(),
-        "confidence": float(parsed.get("confidence", 0.0)),
-    }
-
-
-def generate_chat_result(
-    *,
-    user_input: str,
-    analysis: Dict[str, Any],
-    issue_data: Optional[Dict[str, Any]],
-    order_data: Optional[Dict[str, Any]],
-    etiquette_rules: Optional[List[str]],
-    issues_catalog: Optional[List[Dict[str, Any]]],
-    recent_orders: Optional[List[Dict[str, Any]]],
-    conversation_history: Optional[List[Dict[str, Any]]],
-    known_order_id: str,
-) -> Dict[str, Any]:
-    issue_json = json.dumps(issue_data or {}, ensure_ascii=True)
-    issue_solution = str((issue_data or {}).get("solution", "")).strip()
-    order_json = json.dumps(order_data or {}, ensure_ascii=True)
-    etiquette_json = json.dumps(etiquette_rules or [], ensure_ascii=True)
-    catalog_json = json.dumps(issues_catalog or [], ensure_ascii=True)
-    recent_orders_json = json.dumps(recent_orders or [], ensure_ascii=True)
-    analysis_json = json.dumps(analysis, ensure_ascii=True)
-    history_json = json.dumps(conversation_history or [], ensure_ascii=True)
-    last_assistant_reply = ""
-    for item in reversed(conversation_history or []):
-        if item.get("role") == "assistant" and item.get("content"):
-            last_assistant_reply = str(item.get("content"))
-            break
-
-    user_emotion = analysis.get("emotion", "calm")
-    tone_instruction = "Give a direct, helpful answer."
-    if user_emotion == "angry" or user_emotion == "frustrated":
-        tone_instruction = "Use a calm, empathetic, and understanding tone. Acknowledge their situation simply."
-    elif analysis.get("intent") == "unknown":
-        tone_instruction = "Give a simple, guiding response to help them clarify."
-
-    system_prompt = f"""
-You are a professional, human-like voice support assistant.
-Your goal is to be helpful, concise, and natural.
-
-GROUNDING RULES:
-- Use EXACT user-provided facts from history (e.g., if user says "tomorrow", use "tomorrow").
-- Never generalize or reinterpret specific details.
-- Prioritize facts in conversation history over database defaults.
-
-VOICE & TONE RULES:
-- Style: Conversational, clear, and punchy.
-- Tone: {tone_instruction}
-- BE HUMAN: No scripted apologies like "We apologize for the inconvenience".
-- Clarity: Use short, easy-to-read sentences (TTS-friendly). Maximum 2 sentences.
-- Conciseness: Total response under 25 words.
-
-INSTRUCTIONS:
-- You must return STRICT JSON only.
-- If analysis.waiting_escalation is true, acknowledge they are in the queue naturally.
-- Don't say "I am checking". Just give the result.
-"""
-
-    prompt = f"""
-Generate the support response based on this context and user message:
-
-CONTEXT:
-User message: {user_input}
-Analysis: {analysis_json}
-Known order_id: {known_order_id or "none"}
-Issue data: {issue_json}
-Order data: {order_json}
-Etiquette: {etiquette_json}
-
-Avoid repeating the last assistant reply: {last_assistant_reply or "none"}
-
-Return STRICT JSON:
-{{
-  "intent": "string",
-  "emotion": "string",
-  "response": "natural conversational reply",
-  "escalate": true_or_false,
-  "summary": "short record summary",
-  "resolved": false,
-  "order_id": "string"
-}}
-"""
-
-    history_messages = [
-        {"role": item.get("role", "user"), "content": item.get("content", "")}
-        for item in conversation_history[-15:]
-    ]
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        *history_messages,
-        {"role": "user", "content": prompt},
-    ]
-
-    raw = call_llm(
-        messages,
-        temperature=0.25,
-        preferred_model=settings.groq_fast_model,
-    )
-    parsed = _extract_json(raw)
-
-    if not parsed:
-        raise RuntimeError("LLM did not return valid JSON for chat response.")
-    response_text = str(parsed.get("response", "")).strip()
-
-    return {
-        "intent": str(parsed.get("intent", "")).strip(),
-        "emotion": str(parsed.get("emotion", "")).strip(),
-        "response": response_text,
-        "escalate": bool(parsed.get("escalate", False)),
-        "summary": str(parsed.get("summary", "")).strip(),
-        "resolved": bool(parsed.get("resolved", False)),
-        "order_id": str(parsed.get("order_id", "")).strip(),
-    }
+    except Exception as e:
+        return {
+            "intent": "error",
+            "answer": f"❌ Error: {str(e)}",
+            "sources": []
+        }

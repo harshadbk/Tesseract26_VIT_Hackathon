@@ -27,6 +27,17 @@ const ChatMessage = ({ message }) => {
             </button>
           )}
         </div>
+        {/* Show intent and escalation for bot messages */}
+        {!isUser && (
+          <>
+            {message.intent && (
+              <div className="text-xs text-gray-400 mt-1">Intent: {message.intent}</div>
+            )}
+            {message.escalate && (
+              <div className="text-xs text-red-500 font-semibold mt-1">Escalated to human agent</div>
+            )}
+          </>
+        )}
 
         <div className={`mt-2 flex items-center justify-between gap-2 text-xs ${isUser ? 'text-slate-300' : 'text-slate-500'}`}>
           <span>{formatTime(message.timestamp)}</span>

@@ -1,1 +1,1 @@
-# Marks app as a Python package for reliable imports.
+# This file marks app as a Python package

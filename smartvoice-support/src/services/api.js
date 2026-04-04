@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://tesseract26-vit-backend.onrender.com/'
+// const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://tesseract26-vit-backend.onrender.com/'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/'
 const ENABLE_BACKEND = import.meta.env.VITE_ENABLE_BACKEND !== 'false'
 const BACKEND_RETRY_MS = Number(import.meta.env.VITE_BACKEND_RETRY_MS || 8000)
 let backendDownUntil = 0
@@ -65,12 +66,14 @@ export const chatWithAgent = async (message, userId) => {
       user_id: userId
     })
 
+    // New backend returns: { success, response, sources }
     return {
-      intent: response.data?.intent || 'payment_issue',
-      emotion: response.data?.emotion || 'calm',
-      response: response.data?.response || 'I am here to help. Could you please share more details?',
-      escalate: Boolean(response.data?.escalate),
-      summary: response.data?.summary || 'Case shared with support team.'
+      intent: 'general_inquiry', // Not provided by backend, use default
+      emotion: 'calm', // Not provided by backend, use default
+      response: response.data?.response || '',
+      escalate: false, // Not provided by backend, use default
+      summary: '', // Not provided by backend, use default
+      sources: response.data?.sources || []
     }
   } catch (error) {
     handleBackendFailure(error)
@@ -84,7 +87,8 @@ export const chatWithAgent = async (message, userId) => {
         ? 'I can see this is urgent. I am escalating this to a human support agent now.'
         : 'I am unable to reach the server right now. Please retry in a moment.',
       escalate,
-      summary: `Fallback escalation for ${intent.replaceAll('_', ' ')} with emotion ${emotion}.`
+      summary: `Fallback escalation for ${intent.replaceAll('_', ' ')} with emotion ${emotion}.`,
+      sources: []
     }
   }
 }

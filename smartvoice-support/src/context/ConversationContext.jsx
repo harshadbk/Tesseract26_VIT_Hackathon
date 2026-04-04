@@ -183,15 +183,20 @@ export default function ConversationContext({ children }) {
       const resolvedEmotion = smoothEmotion(responseData.emotion, userEmotion)
       const shouldEscalate = Boolean(responseData.escalate)
 
-      const botReply = responseData.response || 'I want to help, but I need a little more detail to proceed.'
-      const botMessage = makeMessage(botReply, 'bot', 'neutral')
+      // Use answer if present, fallback to response
+      const botReply = responseData.answer || responseData.response || 'I want to help, but I need a little more detail to proceed.'
+      const botMessage = makeMessage(botReply, 'bot', 'neutral', {
+        intent: responseData.intent,
+        escalate: shouldEscalate
+      })
       const completeHistory = [...historyWithUser, botMessage]
 
       const refreshedConversation = {
         ...updatedBeforeReply,
         messages: completeHistory,
         emotion: resolvedEmotion,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        isEscalated: shouldEscalate
       }
 
       setConversations((prev) => withConversationUpdates(prev, refreshedConversation))

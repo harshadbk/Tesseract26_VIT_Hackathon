@@ -1,1 +1,1 @@
-# Models package
+# This file marks models as a Python package

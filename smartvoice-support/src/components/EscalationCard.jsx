@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react'
 import { formatDateTime, getEmotionMeta } from '../utils/helpers'
 
 const statusMeta = {
-  pending: { label: '⏳ Pending', className: 'bg-amber-100 text-amber-700 border-amber-200', icon: '⏳' },
-  assigned: { label: '👤 Assigned', className: 'bg-sky-100 text-sky-700 border-sky-200', icon: '👤' },
-  resolved: { label: '✅ Resolved', className: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: '✅' }
+  pending: { label: 'Pending', className: 'bg-amber-100 text-amber-700 border-amber-200', icon: '' },
+  assigned: { label: 'Assigned', className: 'bg-sky-100 text-sky-700 border-sky-200', icon: '' },
+  resolved: { label: 'Resolved', className: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: '' }
 }
 
 const demoAgents = ['Ava Brown', 'Noah Hall', 'Mia Lewis', 'Liam Carter']
@@ -56,14 +56,14 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
       </div>
 
       <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 enter-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">📝 Issue Summary</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Issue Summary</p>
         <div className="mt-2 max-h-20 overflow-y-auto pr-1">
           <p className="text-sm leading-6 text-slate-700">{escalation.summary}</p>
         </div>
       </div>
 
       <div className="mb-3 flex flex-col rounded-xl border border-slate-200 bg-white p-3 enter-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">💬 Conversation History</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Conversation History</p>
         <div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-1">
           {(escalation.messages || []).map((message, idx) => (
             <div
@@ -74,7 +74,7 @@ const EscalationCard = ({ escalation, onAssign, onResolve }) => {
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-150'
               }`}
             >
-              <p className="mb-1 font-semibold">{message.sender === 'user' ? '👤 Customer' : '🤖 AI Agent'}</p>
+              <p className="mb-1 font-semibold">{message.sender === 'user' ? 'Customer' : 'Agent'}</p>
               <p>{message.text}</p>
             </div>
           ))}
